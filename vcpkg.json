@@ -1,0 +1,20 @@
+{
+  "name": "onlyfrags-com",
+  "version": "1.0.0",
+  "description": "OnlyFrags Com – Lightweight Voice Chat Client",
+  "dependencies": [
+    {
+      "name": "openssl",
+      "platform": "windows"
+    },
+    {
+      "name": "opus",
+      "platform": "windows"
+    },
+    {
+      "name": "nlohmann-json",
+      "platform": "windows"
+    }
+  ],
+  "builtin-baseline": "2024-12-01"
+}
