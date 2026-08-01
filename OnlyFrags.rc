@@ -1,0 +1,98 @@
+#pragma once
+// ─────────────────────────────────────────────────────────────────────────────
+// Network.h  –  OnlyFrags Com
+// TLS-TCP client.  Runs on a dedicated thread; posts WM_APP_* messages
+// to the UI thread for every inbound server event.
+// ─────────────────────────────────────────────────────────────────────────────
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#include <string>
+#include <thread>
+#include <atomic>
+#include <mutex>
+#include <queue>
+#include <functional>
+#include <vector>
+
+#include <nlohmann/json.hpp>
+#include "Config.h"
+#include "Protocol.h"
+
+// Forward-declared so we don't expose OpenSSL headers publicly
+struct ssl_ctx_st;
+struct ssl_st;
+using SSL_CTX = ssl_ctx_st;
+using SSL     = ssl_st;
+
+// ─────────────────────────────────────────────────────────────────────────────
+class NetworkClient {
+public:
+    explicit NetworkClient(HWND ui_hwnd);
+    ~NetworkClient();
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
+    // Establishes TLS-TCP connection on a background thread.
+    bool Connect(const std::string& host, int port, bool verify_cert = false);
+    void Disconnect();
+    bool IsConnected() const;
+
+    // ── Authentication ────────────────────────────────────────────────────────
+    void SendLogin(const std::string& email, const std::string& password);
+    void SendRegister(const std::string& username,
+                      const std::string& email,
+                      const std::string& password,
+                      const std::string& invite_code);
+
+    // ── Session ───────────────────────────────────────────────────────────────
+    void JoinVoiceChannel(const std::string& channel);
+    void LeaveVoiceChannel();
+    void SetMuted(bool muted);
+    void SetDeafened(bool deafened);
+    void SendChat(const std::string& channel, const std::string& content);
+    void GetHistory(const std::string& channel, int limit = 50);
+    void RegisterUdpPort(int local_udp_port);
+    void SendHeartbeat();
+
+    // ── Token (set by Network thread after login_ok) ──────────────────────────
+    std::string GetToken() const;
+    int         GetServerUdpPort() const;
+
+private:
+    // Worker thread entry point
+    void WorkerThread(const std::string& host, int port, bool verify_cert);
+
+    // Send a JSON object as a newline-terminated UTF-8 string
+    bool SendJson(const nlohmann::json& j);
+
+    // Process one inbound message from the server
+    void HandleMessage(const nlohmann::json& j);
+
+    // Post helpers (allocate on heap; UI thread must delete)
+    void PostLoginOk(const std::wstring& username, const nlohmann::json& j);
+    void PostLoginFail(const std::wstring& msg);
+    void PostRegisterOk();
+    void PostRegisterFail(const std::wstring& msg);
+    void PostChatMessage(const nlohmann::json& j);
+    void PostVoiceState(const nlohmann::json& j);
+    void PostVoiceCount(const nlohmann::json& j);
+
+    // ── Members ───────────────────────────────────────────────────────────────
+    HWND              m_hwnd    = nullptr;
+    SOCKET            m_sock    = INVALID_SOCKET;
+    SSL_CTX*          m_ctx     = nullptr;
+    SSL*              m_ssl     = nullptr;
+    std::thread       m_thread;
+    std::atomic<bool> m_running { false };
+    std::atomic<bool> m_connected { false };
+
+    mutable std::mutex m_token_mutex;
+    std::string        m_token;
+    int                m_server_udp_port = 5001;
+
+    // Outbound message queue
+    std::mutex              m_send_mutex;
+    std::queue<std::string> m_send_queue;
+    // Socket event for unblocking the send path
+    HANDLE m_send_event = nullptr;
+};
